@@ -11,7 +11,40 @@ URDF_PATH = ROOT / "model" / "Ares" / "urdf" / "Ares.urdf"
 MESH_DIR = ROOT / "model" / "Ares" / "meshes"
 OUTPUT_PATH = ROOT / "Ares_mujoco_deploy" / "assets" / "Ares.xml"
 
-DEFAULT_STAND = [0.0, -1.35453, 2.54948] * 4
+STAND_POSE = [
+    0.10,
+    0.17,
+    0.04,
+    -0.02,
+    -0.25,
+    -0.04,
+    -0.05,
+    0.44,
+    -0.87,
+    0.16,
+    0.04,
+    0.25,
+]
+CROUCH_POSE = [
+    0.10,
+    -1.33,
+    0.60,
+    -0.02,
+    1.40,
+    -0.70,
+    -0.05,
+    -1.24,
+    -0.35,
+    0.16,
+    1.72,
+    -0.25,
+]
+FOOT_SITE_POS = {
+    "lf_calf_link": [0.00270134, -0.0977853, -0.13423489],
+    "rf_calf_ink": [0.014, 0.09244062, -0.13785985],
+    "lb_calf_link": [-0.0085, -0.14850305, -0.04749628],
+    "rb_calf_link": [-0.0085, 0.14041879, -0.06946962],
+}
 
 
 def parse_floats(text: str, count: int | None = None) -> list[float]:
@@ -39,6 +72,16 @@ def rpy_to_quat(rpy: list[float]) -> list[float]:
 
 def fmt(vals: list[float]) -> str:
     return " ".join(f"{v:.8g}" for v in vals)
+
+
+def find_mass_element(inertial: ET.Element) -> ET.Element | None:
+    mass = inertial.find("mass")
+    if mass is not None:
+        return mass
+    for child in inertial:
+        if child.tag.startswith("mass"):
+            return child
+    return None
 
 
 def main() -> None:
@@ -76,7 +119,7 @@ def main() -> None:
         lines.append(f'    <mesh name="{link_name}" file="{os.path.basename(mesh.attrib["filename"])}"/>')
     lines.append("  </asset>")
     lines.append("  <worldbody>")
-    lines.append('    <geom name="floor" type="plane" size="8 8 0.1" material="blue_checker" contype="1" conaffinity="1" friction="1 0.5 0.1"/>')
+    lines.append('    <geom name="floor" type="plane" size="8 8 0.1" material="blue_checker" contype="1" conaffinity="2" friction="1 0.5 0.1"/>')
 
     def body_block(link_name: str, indent: int = 4) -> list[str]:
         link = links[link_name]
@@ -101,7 +144,10 @@ def main() -> None:
         inertial = link.find("inertial")
         if inertial is not None:
             origin = inertial.find("origin").attrib
-            mass = float(inertial.find("mass").attrib["value"])
+            mass_elem = find_mass_element(inertial)
+            if mass_elem is None:
+                raise ValueError(f"Missing mass element for link {link_name}")
+            mass = float(mass_elem.attrib["value"])
             inertia = inertial.find("inertia").attrib
             full = [
                 float(inertia["ixx"]),
@@ -124,8 +170,13 @@ def main() -> None:
             out.append(
                 f'{pad}  <geom name="{link_name}_geom" type="mesh" mesh="{link_name}" '
                 f'pos="{fmt(parse_floats(origin.get("xyz", "0 0 0"), 3))}" '
-                f'euler="{fmt(parse_floats(origin.get("rpy", "0 0 0"), 3))}" rgba="{fmt(rgba)}" contype="1" conaffinity="1"/>'
+                f'euler="{fmt(parse_floats(origin.get("rpy", "0 0 0"), 3))}" rgba="{fmt(rgba)}" contype="2" conaffinity="1"/>'
             )
+            if link_name in FOOT_SITE_POS:
+                out.append(
+                    f'{pad}  <site name="{link_name}_foot_site" pos="{fmt(FOOT_SITE_POS[link_name])}" size="0.005" '
+                    'rgba="0 0 0 0"/>'
+                )
         for child_joint in children.get(link_name, []):
             out.extend(body_block(child_joint.find("child").attrib["link"], indent + 2))
         out.append(f"{pad}</body>")
@@ -145,6 +196,10 @@ def main() -> None:
             f'gear="1" ctrlrange="-{limits["effort"]} {limits["effort"]}"/>'
         )
     lines.append("  </actuator>")
+    lines.append("  <keyframe>")
+    lines.append(f'    <key name="stand" qpos="0 0 0.8 1 0 0 0 {fmt(STAND_POSE)}"/>')
+    lines.append(f'    <key name="crouch" qpos="0 0 0.45 1 0 0 0 {fmt(CROUCH_POSE)}"/>')
+    lines.append("  </keyframe>")
     lines.append("</mujoco>")
 
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)

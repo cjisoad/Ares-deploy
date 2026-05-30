@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import time
 from pathlib import Path
 
@@ -30,7 +31,41 @@ JOINT_ORDER = [
     "rb_thigh_hip_joint",
     "rb_calf_thigh_joint",
 ]
-DEFAULT_STAND = np.array([0.0, -1.35453, 2.54948] * 4, dtype=np.float32)
+STAND_POSE = np.array(
+    [
+        0.10,
+        0.17,
+        0.04,
+        -0.02,
+        -0.25,
+        -0.04,
+        -0.05,
+        0.44,
+        -0.87,
+        0.16,
+        0.04,
+        0.25,
+    ],
+    dtype=np.float32,
+)
+CROUCH_POSE = np.array(
+    [
+        0.10,
+        -1.33,
+        0.60,
+        -0.02,
+        1.40,
+        -0.70,
+        -0.05,
+        -1.24,
+        -0.35,
+        0.16,
+        1.72,
+        -0.25,
+    ],
+    dtype=np.float32,
+)
+DEFAULT_STAND = STAND_POSE
 
 
 class AresMuJoCoSimulation:
@@ -41,11 +76,14 @@ class AresMuJoCoSimulation:
         base_height: float = DEFAULT_BASE_HEIGHT,
         torque_limit: float = DEFAULT_TORQUE_LIMIT,
         initial_joint_pos: np.ndarray | None = None,
+        verbose: bool = True,
+        key_callback=None,
     ) -> None:
         self.base_height = base_height
         self.use_viewer = use_viewer
         self.torque_limit = torque_limit
         self.initial_joint_pos = DEFAULT_STAND if initial_joint_pos is None else np.asarray(initial_joint_pos, dtype=np.float32)
+        self.verbose = verbose
 
         if not model_path.is_file():
             raise FileNotFoundError(f"Cannot find MJCF model: {model_path}")
@@ -64,15 +102,41 @@ class AresMuJoCoSimulation:
         self.timestamp = 0.0
         self.last_print = 0.0
         self.step_count = 0
+        self.key_callback = key_callback
 
         self._set_initial_pose(self.initial_joint_pos)
 
         self.viewer = None
         if use_viewer:
-            self.viewer = mujoco.viewer.launch_passive(self.model, self.data)
+            self.viewer = mujoco.viewer.launch_passive(
+                self.model,
+                self.data,
+                key_callback=self.key_callback,
+            )
 
-        print(f"[INFO] Ares MuJoCo model loaded from {model_path}")
-        print("[INFO] Python MIT joint-control interface enabled")
+        if self.verbose:
+            print(f"[INFO] Ares MuJoCo model loaded from {model_path}")
+            print("[INFO] Python MIT joint-control interface enabled")
+
+    def close(self) -> None:
+        if self.viewer is not None:
+            self.viewer.close()
+            time.sleep(0.2)
+            self.viewer = None
+
+    def is_running(self) -> bool:
+        return self.viewer is None or self.viewer.is_running()
+
+    def __enter__(self) -> AresMuJoCoSimulation:
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        self.close()
+
+    def _viewer_lock(self):
+        if self.viewer is not None and self.viewer.is_running():
+            return self.viewer.lock()
+        return contextlib.nullcontext()
 
     def _set_initial_pose(self, joint_pos: np.ndarray) -> None:
         qpos = self.data.qpos.copy()
@@ -90,12 +154,13 @@ class AresMuJoCoSimulation:
         quat: np.ndarray = DEFAULT_BASE_QUAT,
     ) -> None:
         """Pin the floating base pose while leaving joint dynamics under torque control."""
-        self.data.qpos[0] = xy[0]
-        self.data.qpos[1] = xy[1]
-        self.data.qpos[2] = height
-        self.data.qpos[3:7] = np.asarray(quat, dtype=np.float32).reshape(4)
-        self.data.qvel[0:6] = 0.0
-        mujoco.mj_forward(self.model, self.data)
+        with self._viewer_lock():
+            self.data.qpos[0] = xy[0]
+            self.data.qpos[1] = xy[1]
+            self.data.qpos[2] = height
+            self.data.qpos[3:7] = np.asarray(quat, dtype=np.float32).reshape(4)
+            self.data.qvel[0:6] = 0.0
+            mujoco.mj_forward(self.model, self.data)
 
     def _quat_to_rpy(self, quat: np.ndarray) -> np.ndarray:
         w, x, y, z = quat
@@ -162,23 +227,28 @@ class AresMuJoCoSimulation:
         print(f"[Ares] t={self.timestamp:.3f} q0={self._joint_pos()[0]:.3f} tau0={self.input_tq.flatten()[0]:.3f}")
 
     def step(self) -> dict[str, np.ndarray | float]:
-        self._apply_joint_torque()
-        mujoco.mj_step(self.model, self.data)
-        self.step_count += 1
-        self.timestamp = self.step_count * DT
-        if self.viewer is not None and self.step_count % 10 == 0:
+        with self._viewer_lock():
+            self._apply_joint_torque()
+            mujoco.mj_step(self.model, self.data)
+            self.step_count += 1
+            self.timestamp = self.step_count * DT
+            state = self.get_state()
+        if self.viewer is not None and self.viewer.is_running() and self.step_count % 10 == 0:
             self.viewer.sync()
-        return self.get_state()
+        return state
 
     def run(self) -> None:
-        last_time = time.time()
-        while True:
-            if time.time() - last_time < DT:
-                time.sleep(0.0001)
-                continue
+        try:
             last_time = time.time()
-            self.step()
-            self._debug_print()
+            while self.is_running():
+                if time.time() - last_time < DT:
+                    time.sleep(0.0001)
+                    continue
+                last_time = time.time()
+                self.step()
+                self._debug_print()
+        finally:
+            self.close()
 
 
 def main() -> None:
@@ -189,13 +259,13 @@ def main() -> None:
     parser.add_argument("--no-viewer", action="store_true")
     args = parser.parse_args()
 
-    sim = AresMuJoCoSimulation(
+    with AresMuJoCoSimulation(
         model_path=args.model,
         use_viewer=not args.no_viewer,
         base_height=args.base_height,
         torque_limit=args.torque_limit,
-    )
-    sim.run()
+    ) as sim:
+        sim.run()
 
 
 if __name__ == "__main__":

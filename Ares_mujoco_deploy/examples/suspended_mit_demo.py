@@ -5,17 +5,15 @@ import sys
 import time
 from pathlib import Path
 
-import numpy as np
-
-
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from sim.ares_mujoco_simulation import AresMuJoCoSimulation, DT
+import numpy as np
+
+from sim.ares_mujoco_simulation import AresMuJoCoSimulation, DT, STAND_POSE
 
 
 HANG_HEIGHT = 1.5
-NATURAL_HANG = np.zeros(12, dtype=np.float32)
 
 
 def main() -> None:
@@ -24,30 +22,29 @@ def main() -> None:
     parser.add_argument("--no-viewer", action="store_true")
     args = parser.parse_args()
 
-    sim = AresMuJoCoSimulation(
+    with AresMuJoCoSimulation(
         use_viewer=not args.no_viewer,
         base_height=HANG_HEIGHT,
-        initial_joint_pos=NATURAL_HANG,
-    )
+        initial_joint_pos=STAND_POSE,
+    ) as sim:
+        kp = np.full(12, 30.0, dtype=np.float32)
+        kd = np.full(12, 1.5, dtype=np.float32)
+        dq_des = np.zeros(12, dtype=np.float32)
+        tau_ff = np.zeros(12, dtype=np.float32)
 
-    kp = np.full(12, 30.0, dtype=np.float32)
-    kd = np.full(12, 1.5, dtype=np.float32)
-    dq_des = np.zeros(12, dtype=np.float32)
-    tau_ff = np.zeros(12, dtype=np.float32)
-
-    start = time.time()
-    while args.duration <= 0.0 or time.time() - start < args.duration:
-        sim.hold_base_pose(HANG_HEIGHT)
-        sim.set_mit_command(
-            kp=kp,
-            q_des=NATURAL_HANG,
-            kd=kd,
-            dq_des=dq_des,
-            tau_ff=tau_ff,
-        )
-        sim.step()
-        sim.hold_base_pose(HANG_HEIGHT)
-        time.sleep(DT)
+        start = time.time()
+        while sim.is_running() and (args.duration <= 0.0 or time.time() - start < args.duration):
+            sim.hold_base_pose(HANG_HEIGHT)
+            sim.set_mit_command(
+                kp=kp,
+                q_des=STAND_POSE,
+                kd=kd,
+                dq_des=dq_des,
+                tau_ff=tau_ff,
+            )
+            sim.step()
+            sim.hold_base_pose(HANG_HEIGHT)
+            time.sleep(DT)
 
 
 if __name__ == "__main__":

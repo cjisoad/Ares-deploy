@@ -16,7 +16,10 @@
 - `examples/`：示例目录。
   - `mit_control_demo.py` 演示如何直接调用 Python API 下发 MIT 控制指令并运行仿真。
   - `suspended_mit_demo.py` 演示机身固定在离地 1.5 米、四肢自然下垂并使用 MIT 力矩控制的场景。
+  - `hanging_leg_control_demo.py` 演示机身固定在离地 1.5 米时，用 IK 驱动四条腿做最小摆动和支撑腿补偿，专门用于验证腿部逆解与分腿控制。
   - `free_fall_demo.py` 演示机身从离地 1 米自然下落至蓝色棋盘格地面的场景。
+  - `state_machine_demo.py` 演示“初始状态 -> 站立”的上层状态机流程，支持终端手动触发站立。
+    进入位置控制后可用 `WASD` 调速度，`Space` 清零。
 - `archive/`：归档参考目录。
   - 如果仓库中存在该目录，它只保留历史参考文件，不属于当前功能代码，不参与运行、导入或构建。
 
@@ -59,6 +62,7 @@ python3 examples/mit_control_demo.py
 
 ```bash
 python3 examples/suspended_mit_demo.py
+python3 examples/hanging_leg_control_demo.py
 python3 examples/free_fall_demo.py
 ```
 
