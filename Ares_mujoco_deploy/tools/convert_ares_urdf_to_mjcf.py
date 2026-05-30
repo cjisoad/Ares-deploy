@@ -67,6 +67,8 @@ def main() -> None:
     lines.append('    <motor ctrllimited="true"/>')
     lines.append("  </default>")
     lines.append("  <asset>")
+    lines.append('    <texture name="blue_checker" type="2d" builtin="checker" rgb1="0.05 0.16 0.38" rgb2="0.45 0.68 1" width="512" height="512"/>')
+    lines.append('    <material name="blue_checker" texture="blue_checker" texrepeat="8 8" reflectance="0.12"/>')
     for link_name, link in links.items():
         mesh = link.find("./visual/geometry/mesh")
         if mesh is None:
@@ -74,7 +76,7 @@ def main() -> None:
         lines.append(f'    <mesh name="{link_name}" file="{os.path.basename(mesh.attrib["filename"])}"/>')
     lines.append("  </asset>")
     lines.append("  <worldbody>")
-    lines.append('    <geom name="floor" type="plane" size="5 5 0.1" rgba="0.95 0.95 0.95 1" contype="1" conaffinity="1" friction="1 0.5 0.1"/>')
+    lines.append('    <geom name="floor" type="plane" size="8 8 0.1" material="blue_checker" contype="1" conaffinity="1" friction="1 0.5 0.1"/>')
 
     def body_block(link_name: str, indent: int = 4) -> list[str]:
         link = links[link_name]
@@ -152,4 +154,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

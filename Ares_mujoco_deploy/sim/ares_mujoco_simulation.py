@@ -12,6 +12,7 @@ import numpy as np
 DT = 0.001
 DEFAULT_BASE_HEIGHT = 0.8
 DEFAULT_TORQUE_LIMIT = 17.0
+DEFAULT_BASE_QUAT = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)
 
 ROOT = Path(__file__).resolve().parents[1]
 MODEL_PATH = ROOT / "assets" / "Ares.xml"
@@ -39,10 +40,12 @@ class AresMuJoCoSimulation:
         use_viewer: bool = True,
         base_height: float = DEFAULT_BASE_HEIGHT,
         torque_limit: float = DEFAULT_TORQUE_LIMIT,
+        initial_joint_pos: np.ndarray | None = None,
     ) -> None:
         self.base_height = base_height
         self.use_viewer = use_viewer
         self.torque_limit = torque_limit
+        self.initial_joint_pos = DEFAULT_STAND if initial_joint_pos is None else np.asarray(initial_joint_pos, dtype=np.float32)
 
         if not model_path.is_file():
             raise FileNotFoundError(f"Cannot find MJCF model: {model_path}")
@@ -62,7 +65,7 @@ class AresMuJoCoSimulation:
         self.last_print = 0.0
         self.step_count = 0
 
-        self._set_initial_pose()
+        self._set_initial_pose(self.initial_joint_pos)
 
         self.viewer = None
         if use_viewer:
@@ -71,12 +74,27 @@ class AresMuJoCoSimulation:
         print(f"[INFO] Ares MuJoCo model loaded from {model_path}")
         print("[INFO] Python MIT joint-control interface enabled")
 
-    def _set_initial_pose(self) -> None:
+    def _set_initial_pose(self, joint_pos: np.ndarray) -> None:
         qpos = self.data.qpos.copy()
         qpos[2] = self.base_height
-        qpos[7:19] = DEFAULT_STAND
+        qpos[3:7] = DEFAULT_BASE_QUAT
+        qpos[7:19] = np.asarray(joint_pos, dtype=np.float32).reshape(self.dof_num)
         self.data.qpos[:] = qpos
         self.data.qvel[:] = 0
+        mujoco.mj_forward(self.model, self.data)
+
+    def hold_base_pose(
+        self,
+        height: float,
+        xy: tuple[float, float] = (0.0, 0.0),
+        quat: np.ndarray = DEFAULT_BASE_QUAT,
+    ) -> None:
+        """Pin the floating base pose while leaving joint dynamics under torque control."""
+        self.data.qpos[0] = xy[0]
+        self.data.qpos[1] = xy[1]
+        self.data.qpos[2] = height
+        self.data.qpos[3:7] = np.asarray(quat, dtype=np.float32).reshape(4)
+        self.data.qvel[0:6] = 0.0
         mujoco.mj_forward(self.model, self.data)
 
     def _quat_to_rpy(self, quat: np.ndarray) -> np.ndarray:

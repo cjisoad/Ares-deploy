@@ -15,6 +15,8 @@
   - `ares_mujoco_simulation.py` 定义 `AresMuJoCoSimulation`，负责加载模型、初始化姿态、执行步进、输出状态，并实现 MIT 风格的关节力矩控制接口。
 - `examples/`：示例目录。
   - `mit_control_demo.py` 演示如何直接调用 Python API 下发 MIT 控制指令并运行仿真。
+  - `suspended_mit_demo.py` 演示机身固定在离地 1.5 米、四肢自然下垂并使用 MIT 力矩控制的场景。
+  - `free_fall_demo.py` 演示机身从离地 1 米自然下落至蓝色棋盘格地面的场景。
 - `archive/`：归档参考目录。
   - 如果仓库中存在该目录，它只保留历史参考文件，不属于当前功能代码，不参与运行、导入或构建。
 
@@ -51,6 +53,13 @@ python3 sim/ares_mujoco_simulation.py --no-viewer
 ```bash
 cd /home/eden/Ares_deploy/Ares_mujoco_deploy
 python3 examples/mit_control_demo.py
+```
+
+### 指定场景示例
+
+```bash
+python3 examples/suspended_mit_demo.py
+python3 examples/free_fall_demo.py
 ```
 
 核心接口：

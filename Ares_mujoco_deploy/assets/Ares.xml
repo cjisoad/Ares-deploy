@@ -8,6 +8,8 @@
     <motor ctrllimited="true"/>
   </default>
   <asset>
+    <texture name="blue_checker" type="2d" builtin="checker" rgb1="0.05 0.16 0.38" rgb2="0.45 0.68 1" width="512" height="512"/>
+    <material name="blue_checker" texture="blue_checker" texrepeat="8 8" reflectance="0.12"/>
     <mesh name="base_link" file="base_link.STL"/>
     <mesh name="lf_hip_link" file="lf_hip_link.STL"/>
     <mesh name="lf_thigh_link" file="lf_thigh_link.STL"/>
@@ -23,7 +25,7 @@
     <mesh name="rb_calf_link" file="rb_calf_link.STL"/>
   </asset>
   <worldbody>
-    <geom name="floor" type="plane" size="5 5 0.1" rgba="0.95 0.95 0.95 1" contype="1" conaffinity="1" friction="1 0.5 0.1"/>
+    <geom name="floor" type="plane" size="8 8 0.1" material="blue_checker" contype="1" conaffinity="1" friction="1 0.5 0.1"/>
     <body name="base_link" pos="0 0 0">
       <freejoint/>
       <site name="imu_site" pos="0 0 0" size="0.01" rgba="0 0 0 0"/>
