@@ -75,26 +75,28 @@ class PositionController:
         current_joint_pos: np.ndarray,
         command: PositionControlCommand,
     ) -> tuple[np.ndarray, np.ndarray]:
+        ticks = self._periodic_ticks(ticks)
         contacts = self.gait.contacts(ticks)
         swing_phase = self.gait.swing_phase(ticks)
-        next_locations = self.foot_locations.copy()
+        next_locations = self.default_stance.copy()
         self.ticks = ticks
         for leg_index in range(4):
             if contacts[leg_index]:
                 next_locations[:, leg_index] = self.stance_controller.next_foot_location(
                     leg_index,
-                    self.foot_locations,
+                    self.default_stance,
                     command,
                 )
             else:
                 next_locations[:, leg_index] = self.swing_controller.next_foot_location(
                     swing_phase,
                     leg_index,
-                    self.foot_locations,
+                    self.default_stance,
                     command,
                 )
+            next_locations[:, leg_index] = self._scaled_target(leg_index, next_locations[:, leg_index])
         self.foot_locations = next_locations
-        self.joint_targets = self.kinematics.inverse_kinematics(next_locations, current_joint_pos)
+        self.joint_targets = self.pin_ik.solve(next_locations, current_joint_pos)
         return self.joint_targets.copy(), contacts.copy()
 
     def _periodic_ticks(self, ticks: int) -> int:

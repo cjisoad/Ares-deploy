@@ -19,12 +19,14 @@ class VelocityCommand:
 class VelocityTeleop:
     def __init__(
         self,
-        step: float = 0.05,
-        max_speed: float = 0.30,
-        max_yaw_rate: float = 1.0,
+        step: float = 0.60,
+        max_speed: float = 1.20,
+        yaw_step: float = 0.45,
+        max_yaw_rate: float = 1.20,
     ) -> None:
         self.step = step
         self.max_speed = max_speed
+        self.yaw_step = yaw_step
         self.max_yaw_rate = max_yaw_rate
         self._lock = threading.Lock()
         self._command = VelocityCommand()
@@ -35,7 +37,7 @@ class VelocityTeleop:
                 self._command.horizontal_velocity[0] = self._clip(
                     self._command.horizontal_velocity[0] + self.step
                 )
-            elif key == glfw.KEY_S:
+            elif key == glfw.KEY_X:
                 self._command.horizontal_velocity[0] = self._clip(
                     self._command.horizontal_velocity[0] - self.step
                 )
@@ -46,6 +48,16 @@ class VelocityTeleop:
             elif key == glfw.KEY_D:
                 self._command.horizontal_velocity[1] = self._clip(
                     self._command.horizontal_velocity[1] - self.step
+                )
+            elif key == glfw.KEY_Q:
+                self._command.yaw_rate = self._clip(
+                    self._command.yaw_rate + self.yaw_step,
+                    self.max_yaw_rate,
+                )
+            elif key == glfw.KEY_E:
+                self._command.yaw_rate = self._clip(
+                    self._command.yaw_rate - self.yaw_step,
+                    self.max_yaw_rate,
                 )
             elif key == glfw.KEY_SPACE:
                 self._command.horizontal_velocity[:] = 0.0

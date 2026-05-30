@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 
 import numpy as np
+import glfw
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -36,13 +37,14 @@ def position_command(state_machine: AresStateMachine) -> PositionControlCommand:
 
 
 def print_prompt() -> None:
-    print("命令：s 站立，p 原地踏步，c 趴下，q 退出。位置控制中 WASD 调速度，空格清零。")
+    print("命令：s 站立，p 位置控制，c 趴下，quit 退出。p 中 W/X 前后，A/D 左右，Q/E 转向，空格清零。")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--drop-duration", type=float, default=2.0)
     parser.add_argument("--stand-duration", type=float, default=3.0)
+    parser.add_argument("--crouch-duration", type=float, default=3.0)
     parser.add_argument("--kp", type=float, default=45.0)
     parser.add_argument("--kd", type=float, default=2.0)
     parser.add_argument("--no-viewer", action="store_true")
@@ -59,6 +61,7 @@ def main() -> None:
     config = AresStateMachineConfig(
         drop_duration=args.drop_duration,
         stand_duration=args.stand_duration,
+        crouch_duration=args.crouch_duration,
         kp=args.kp,
         kd=args.kd,
     )
@@ -82,11 +85,40 @@ def main() -> None:
         while sim.is_running() and (args.duration <= 0.0 or time.time() - start < args.duration):
             while not commands.empty():
                 command = commands.get_nowait()
-                if command == "q":
+                if command in ("quit", "exit"):
                     return
+                if command == "w":
+                    teleop.handle_key(glfw.KEY_W)
+                    print("teleop -> w")
+                    continue
+                if command == "x":
+                    teleop.handle_key(glfw.KEY_X)
+                    print("teleop -> x")
+                    continue
+                if command == "a":
+                    teleop.handle_key(glfw.KEY_A)
+                    print("teleop -> a")
+                    continue
+                if command == "d":
+                    teleop.handle_key(glfw.KEY_D)
+                    print("teleop -> d")
+                    continue
+                if command == "q":
+                    teleop.handle_key(glfw.KEY_Q)
+                    print("teleop -> q")
+                    continue
+                if command == "e":
+                    teleop.handle_key(glfw.KEY_E)
+                    print("teleop -> e")
+                    continue
+                if command in ("space", "clear", "0"):
+                    teleop.set_zero()
+                    print("teleop -> clear")
+                    continue
                 if command == "s":
                     if state_machine.request_stand():
                         pending_position = False
+                        teleop.set_zero()
                         print("-> s")
                     else:
                         print("当前不能进入 s。")
@@ -107,7 +139,7 @@ def main() -> None:
                     teleop.set_zero()
                     print("-> c")
                 elif command:
-                    print("请输入 c、s、p 或 q。")
+                    print("请输入 s、p、c、quit，或 p 状态下的 w/x/a/d/q/e/space。")
 
             if args.auto_stand and not auto_stand_sent and state_machine.state == AresState.INITIAL:
                 state_machine.request_stand()
@@ -143,6 +175,8 @@ def main() -> None:
                     print("状态：s")
                 elif last_state == AresState.POSITION:
                     print("状态：p")
+                elif last_state == AresState.CROUCHING:
+                    print("状态：c...")
                 elif last_state == AresState.CROUCH:
                     print("状态：c")
 

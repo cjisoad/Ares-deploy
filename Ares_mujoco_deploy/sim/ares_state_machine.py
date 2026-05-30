@@ -17,6 +17,7 @@ class AresState(Enum):
     STANDING = "standing"
     STAND = "stand"
     POSITION = "position"
+    CROUCHING = "crouching"
     CROUCH = "crouch"
 
 
@@ -24,6 +25,7 @@ class AresState(Enum):
 class AresStateMachineConfig:
     drop_duration: float = 2.0
     stand_duration: float = 3.0
+    crouch_duration: float = 3.0
     kp: float = 45.0
     kd: float = 2.0
     position: PositionControlConfig = field(default_factory=PositionControlConfig)
@@ -42,7 +44,7 @@ class AresStateMachine:
         self._set_zero_torque(CROUCH_POSE)
 
     def request_stand(self) -> bool:
-        if self.state not in (AresState.INITIAL, AresState.STAND, AresState.CROUCH):
+        if self.state not in (AresState.INITIAL, AresState.STAND, AresState.CROUCH, AresState.POSITION, AresState.CROUCHING):
             return False
         self.transition_start_pos = self.sim.get_state()["joint_pos"].copy()
         self.commanded_pos = self.transition_start_pos.copy()
@@ -78,17 +80,35 @@ class AresStateMachine:
             return state
 
         if self.state == AresState.POSITION:
-            target, _contacts = self.position_controller.in_place_step(
-                self.sim.step_count,
-                self.sim.get_state()["joint_pos"],
-                self.position_command,
-            )
+            current_joint_pos = self.sim.get_state()["joint_pos"]
+            if np.allclose(self.position_command.horizontal_velocity, 0.0):
+                target, _contacts = self.position_controller.in_place_step(
+                    self.sim.step_count,
+                    current_joint_pos,
+                    self.position_command,
+                )
+            else:
+                target, _contacts = self.position_controller.step(
+                    self.sim.step_count,
+                    current_joint_pos,
+                    self.position_command,
+                )
             self.sim.set_mit_command(
                 kp=np.full(self.sim.dof_num, self.config.position.kp, dtype=np.float32),
                 q_des=target,
                 kd=np.full(self.sim.dof_num, self.config.position.kd, dtype=np.float32),
             )
             return self.sim.step()
+
+        if self.state == AresState.CROUCHING:
+            alpha = self._transition_alpha(self._state_elapsed(), self.config.crouch_duration)
+            self.commanded_pos = (1.0 - alpha) * self.transition_start_pos + alpha * CROUCH_POSE
+            self._set_hold_command(self.commanded_pos)
+            state = self.sim.step()
+            if alpha >= 1.0:
+                self.commanded_pos = CROUCH_POSE.copy()
+                self._enter(AresState.CROUCH)
+            return state
 
         if self.state == AresState.CROUCH:
             self._set_hold_command(CROUCH_POSE)
@@ -125,7 +145,9 @@ class AresStateMachine:
         self.position_command = command
 
     def crouch(self) -> None:
-        self._enter(AresState.CROUCH)
+        self.transition_start_pos = self.sim.get_state()["joint_pos"].copy()
+        self.commanded_pos = self.transition_start_pos.copy()
+        self._enter(AresState.CROUCHING)
 
     def request_crouch(self) -> None:
         self.crouch()
