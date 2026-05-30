@@ -78,7 +78,7 @@ class AresStateMachine:
             return state
 
         if self.state == AresState.POSITION:
-            target, _contacts = self.position_controller.step(
+            target, _contacts = self.position_controller.in_place_step(
                 self.sim.step_count,
                 self.sim.get_state()["joint_pos"],
                 self.position_command,

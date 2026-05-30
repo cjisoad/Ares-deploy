@@ -30,8 +30,16 @@ class PositionControlConfig:
     alpha: float = 0.5
     beta: float = 0.5
     z_time_constant: float = 0.08
-    kp: float = 55.0
-    kd: float = 2.5
+    kp: float = 75.0
+    kd: float = 3.5
+    step_period: float = 0.42
+    in_place_step_velocity: float = 0.14
+    visual_xy_gain: float = 1.8
+    visual_z_gain: float = 1.8
+    max_x_offset: float = 0.12
+    max_y_offset: float = 0.10
+    min_z_offset: float = -0.02
+    max_z_offset: float = 0.16
 
     @property
     def overlap_ticks(self) -> int:

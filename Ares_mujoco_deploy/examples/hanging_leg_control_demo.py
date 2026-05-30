@@ -4,6 +4,7 @@ import argparse
 import sys
 import time
 from pathlib import Path
+from dataclasses import replace
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -11,60 +12,22 @@ sys.path.insert(0, str(ROOT))
 import numpy as np
 
 from control.config import PositionControlCommand
+from control.gait import GaitController
 from control.position_controller import PositionController
+from control.stance_controller import StanceController
+from control.swing_controller import SwingController
+from control.pinocchio_ik import PinocchioIK
 from sim.ares_mujoco_simulation import AresMuJoCoSimulation, DT, STAND_POSE
 
 
 HANG_HEIGHT = 1.5
 FOOT_HEIGHT = -0.30
-STEP_PERIOD = 0.8
-STEP_LIFT = 0.45
-STEP_KNEE = 0.35
-WALK_STEP_HEIGHT = 0.08
-
-
-def build_step_pattern(controller: PositionController, command: PositionControlCommand, phase: float) -> np.ndarray:
-    foot = controller.default_stance.copy()
-    stride = 0.12 * command.horizontal_velocity
-    local_phase = (phase * 2.0) % 1.0
-    lift = 0.07 * np.sin(np.pi * local_phase)
-    if phase < 0.5:
-        swing_legs = (0, 3)
-        support_legs = (1, 2)
-    else:
-        swing_legs = (1, 2)
-        support_legs = (0, 3)
-    for leg in support_legs:
-        foot[0, leg] -= stride[0] * 0.5
-        foot[1, leg] -= stride[1] * 0.5
-        foot[2, leg] = command.height
-    for leg in swing_legs:
-        foot[0, leg] += stride[0] * (local_phase - 0.5)
-        foot[1, leg] += stride[1] * (local_phase - 0.5)
-        foot[2, leg] = command.height + max(lift, 0.0)
-    return foot
-
-
-def joint_space_step(phase: float) -> np.ndarray:
-    q = STAND_POSE.copy().reshape(4, 3)
-    local_phase = (phase * 2.0) % 1.0
-    lift = np.sin(np.pi * local_phase)
-    if phase < 0.5:
-        swing_legs = (0, 3)
-    else:
-        swing_legs = (1, 2)
-    for leg in swing_legs:
-        thigh_sign = -1.0 if leg in (0, 2) else 1.0
-        calf_sign = 1.0 if leg in (0, 2) else -1.0
-        q[leg, 1] += thigh_sign * STEP_LIFT * lift
-        q[leg, 2] += calf_sign * STEP_KNEE * lift
-    return q.reshape(12).astype(np.float32)
+STEP_PERIOD = 0.42
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--duration", type=float, default=0.0, help="Seconds to run; 0 means forever.")
-    parser.add_argument("--mode", choices=("joint", "ik"), default="joint", help="joint is easier to see; ik uses foot targets.")
     parser.add_argument("--no-viewer", action="store_true")
     args = parser.parse_args()
 
@@ -75,22 +38,62 @@ def main() -> None:
         verbose=False,
     ) as sim:
         controller = PositionController(sim.model)
+        demo_config = replace(
+            controller.config,
+            overlap_time=0.02,
+            swing_time=0.08,
+            z_clearance=0.18,
+            alpha=1.8,
+        )
+        gait = GaitController(demo_config)
+        stance_controller = StanceController(demo_config)
+        swing_controller = SwingController(demo_config, controller.default_stance)
+        pin_ik = PinocchioIK()
         controller.reset(sim.get_state()["joint_pos"])
-        phase = 0.0
-        command = PositionControlCommand(horizontal_velocity=np.array([0.10, 0.0], dtype=np.float32), height=FOOT_HEIGHT)
+        command = PositionControlCommand(
+            horizontal_velocity=np.array([0.14, 0.0], dtype=np.float32),
+            height=FOOT_HEIGHT,
+        )
+        xy_gain = 1.8
+        z_gain = 1.8
         start = time.time()
-        print(f"挂起踏步已启动，mode={args.mode}。Ctrl+C 退出。")
+        print("挂起踏步已启动。Ctrl+C 退出。")
         while sim.is_running() and (args.duration <= 0.0 or time.time() - start < args.duration):
-            phase = (phase + DT / STEP_PERIOD) % 1.0
-            if args.mode == "joint":
-                q_des = joint_space_step(phase)
-            else:
-                target_feet = build_step_pattern(controller, command, phase)
-                q_des = controller.set_foot_pattern(target_feet, sim.get_state()["joint_pos"])
+            phase = (time.time() - start) % STEP_PERIOD
+            step_index = int((phase / STEP_PERIOD) * gait.config.phase_length)
+            contacts = gait.contacts(step_index)
+            swing_phase = gait.swing_phase(step_index)
+            next_locations = controller.foot_locations.copy()
+            for leg_index in range(4):
+                if contacts[leg_index]:
+                    next_locations[:, leg_index] = stance_controller.next_foot_location(
+                        leg_index,
+                        controller.foot_locations,
+                        command,
+                    )
+                else:
+                    next_locations[:, leg_index] = swing_controller.next_foot_location(
+                        swing_phase,
+                        leg_index,
+                        controller.foot_locations,
+                        command,
+                    )
+                base = controller.default_stance[:, leg_index]
+                target = next_locations[:, leg_index]
+                target = np.array(
+                    [
+                        np.clip(base[0] + xy_gain * (target[0] - base[0]), base[0] - 0.12, base[0] + 0.12),
+                        np.clip(base[1] + xy_gain * (target[1] - base[1]), base[1] - 0.10, base[1] + 0.10),
+                        np.clip(base[2] + z_gain * (target[2] - base[2]), base[2] - 0.02, base[2] + 0.16),
+                    ],
+                    dtype=np.float32,
+                )
+                next_locations[:, leg_index] = target
+            q_des = pin_ik.solve(next_locations, sim.get_state()["joint_pos"], base_pose=np.array([0.0, 0.0, HANG_HEIGHT], dtype=np.float64))
             sim.set_mit_command(
-                kp=np.full(12, 60.0, dtype=np.float32),
+                kp=np.full(12, 75.0, dtype=np.float32),
                 q_des=q_des,
-                kd=np.full(12, 3.0, dtype=np.float32),
+                kd=np.full(12, 3.5, dtype=np.float32),
             )
             sim.hold_base_pose(HANG_HEIGHT)
             sim.step()

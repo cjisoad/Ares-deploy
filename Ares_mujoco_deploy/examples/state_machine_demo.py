@@ -36,7 +36,7 @@ def position_command(state_machine: AresStateMachine) -> PositionControlCommand:
 
 
 def print_prompt() -> None:
-    print("命令：s 站立，p 位置控制，c 趴下，q 退出。位置控制中 WASD 调速度，空格清零。")
+    print("命令：s 站立，p 原地踏步，c 趴下，q 退出。位置控制中 WASD 调速度，空格清零。")
 
 
 def main() -> None:
