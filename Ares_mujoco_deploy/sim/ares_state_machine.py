@@ -8,7 +8,8 @@ import numpy as np
 
 from control.config import PositionControlCommand, PositionControlConfig
 from control.position_controller import PositionController
-from sim.ares_mujoco_simulation import AresMuJoCoSimulation, CROUCH_POSE, STAND_POSE
+from robot_io.types import RobotBackend
+from sim.ares_mujoco_simulation import CROUCH_POSE, STAND_POSE
 
 
 class AresState(Enum):
@@ -32,7 +33,7 @@ class AresStateMachineConfig:
 
 
 class AresStateMachine:
-    def __init__(self, sim: AresMuJoCoSimulation, config: AresStateMachineConfig | None = None) -> None:
+    def __init__(self, sim: RobotBackend, config: AresStateMachineConfig | None = None) -> None:
         self.sim = sim
         self.config = config or AresStateMachineConfig()
         self.state = AresState.DROPPING

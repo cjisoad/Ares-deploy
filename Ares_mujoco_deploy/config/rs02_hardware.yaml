@@ -1,0 +1,143 @@
+# RS02 backend configuration for Ares 12-joint hardware.
+# Dry-run is safe by default. Live output requires the demo's explicit --live
+# confirmation and per-joint enabled=true settings below.
+
+interface:
+  port: /dev/ttyUSB0
+  serial_baud: 921600
+  master_id: 0xFD
+  rate_hz: 100
+
+safety:
+  startup_timeout: 3.0
+  feedback_timeout: 0.25
+  command_timeout: 0.25
+  default_damping_kd: 0.2
+
+state:
+  base_height: 0.0
+
+dry_run:
+  tracking_alpha: 0.2
+
+joints:
+  lf_hip_base_joint:
+    motor_name: lf_hip
+    motor_id: 0x01
+    enabled: false
+    sign: 1.0
+    zero_offset: 0.0
+    joint_min: -0.5
+    joint_max: 1.57
+    motor_min:
+    motor_max:
+  lf_thigh_hip_joint:
+    motor_name: lf_thigh
+    motor_id: 0x02
+    enabled: false
+    sign: 1.0
+    zero_offset: 0.0
+    joint_min: -2.35
+    joint_max: 2.35
+    motor_min:
+    motor_max:
+  lf_calf_thigh_joint:
+    motor_name: lf_calf
+    motor_id: 0x03
+    enabled: false
+    sign: 1.0
+    zero_offset: 0.0
+    joint_min: -0.9
+    joint_max: 0.75
+    motor_min:
+    motor_max:
+  rf_hip_base_joint:
+    motor_name: rf_hip
+    motor_id: 0x04
+    enabled: false
+    sign: 1.0
+    zero_offset: 0.0
+    joint_min: -1.57
+    joint_max: 0.5
+    motor_min:
+    motor_max:
+  rf_thigh_hip_joint:
+    motor_name: rf_thigh
+    motor_id: 0x05
+    enabled: false
+    sign: 1.0
+    zero_offset: 0.0
+    joint_min: -2.35
+    joint_max: 2.35
+    motor_min:
+    motor_max:
+  rf_calf_thigh_joint:
+    motor_name: rf_calf
+    motor_id: 0x06
+    enabled: false
+    sign: 1.0
+    zero_offset: 0.0
+    joint_min: -0.7
+    joint_max: 0.9
+    motor_min:
+    motor_max:
+  lb_hip_base_joint:
+    motor_name: lb_hip
+    motor_id: 0x07
+    enabled: false
+    sign: 1.0
+    zero_offset: 0.0
+    joint_min: -1.57
+    joint_max: 0.5
+    motor_min:
+    motor_max:
+  lb_thigh_hip_joint:
+    motor_name: lb_thigh
+    motor_id: 0x08
+    enabled: false
+    sign: 1.0
+    zero_offset: 0.0
+    joint_min: -2.35
+    joint_max: 2.35
+    motor_min:
+    motor_max:
+  lb_calf_thigh_joint:
+    motor_name: lb_calf
+    motor_id: 0x09
+    enabled: false
+    sign: 1.0
+    zero_offset: 0.0
+    joint_min: -1.65
+    joint_max: -0.13
+    motor_min:
+    motor_max:
+  rb_hip_base_joint:
+    motor_name: rb_hip
+    motor_id: 0x0A
+    enabled: false
+    sign: 1.0
+    zero_offset: 0.0
+    joint_min: -0.5
+    joint_max: 1.57
+    motor_min:
+    motor_max:
+  rb_thigh_hip_joint:
+    motor_name: rb_thigh
+    motor_id: 0x0B
+    enabled: false
+    sign: 1.0
+    zero_offset: 0.0
+    joint_min: -2.35
+    joint_max: 2.35
+    motor_min:
+    motor_max:
+  rb_calf_thigh_joint:
+    motor_name: rb_calf
+    motor_id: 0x0C
+    enabled: false
+    sign: 1.0
+    zero_offset: 0.0
+    joint_min: -1.12
+    joint_max: 0.4
+    motor_min:
+    motor_max:

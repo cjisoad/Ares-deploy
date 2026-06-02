@@ -1,0 +1,46 @@
+# State machine runtime parameters for examples/state_machine_demo.py.
+
+simulation:
+  drop_height: 1.0
+  duration: 0.0
+  no_viewer: false
+
+display:
+  show_torque_overlay: true
+
+state_machine:
+  drop_duration: 2.0
+  stand_duration: 3.0
+  crouch_duration: 3.0
+  kp: 45.0
+  kd: 2.0
+
+position_control:
+  kp: 30.0
+  kd: 1.5
+  step_period: 0.34
+  swing_time: 0.20
+  overlap_time: 0.10
+  z_clearance: 0.07
+  alpha: 3.2
+  beta: 2.4
+  max_x_offset: 0.32
+  max_y_offset: 0.18
+  body_forward_bias: 0.05
+  accumulate_foot_targets: false
+  yaw_feedback_gain: 3.0
+  max_yaw_rate: 2.4
+  enable_tilt_compensation: false
+  tilt_compensation_gain: 0.8
+  max_tilt_compensation: 0.4
+
+startup:
+  auto_stand: false
+  auto_position: false
+  command_vx: 0.0
+  command_vy: 0.0
+  command_yaw_rate: 0.0
+
+logging:
+  position_log:
+  log_interval: 0.05

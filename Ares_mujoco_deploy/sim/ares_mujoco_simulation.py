@@ -78,12 +78,14 @@ class AresMuJoCoSimulation:
         initial_joint_pos: np.ndarray | None = None,
         verbose: bool = True,
         key_callback=None,
+        show_torque_overlay: bool = False,
     ) -> None:
         self.base_height = base_height
         self.use_viewer = use_viewer
         self.torque_limit = torque_limit
         self.initial_joint_pos = DEFAULT_STAND if initial_joint_pos is None else np.asarray(initial_joint_pos, dtype=np.float32)
         self.verbose = verbose
+        self.show_torque_overlay = show_torque_overlay
 
         if not model_path.is_file():
             raise FileNotFoundError(f"Cannot find MJCF model: {model_path}")
@@ -221,6 +223,24 @@ class AresMuJoCoSimulation:
         self.input_tq = np.clip(self.input_tq, -self.torque_limit, self.torque_limit)
         self.data.ctrl[:] = self.input_tq.flatten()
 
+    def _update_torque_overlay(self) -> None:
+        if self.viewer is None or not self.viewer.is_running():
+            return
+        if not self.show_torque_overlay:
+            return
+        labels = ["joint tau"]
+        values = [f"limit +/-{self.torque_limit:g} Nm"]
+        labels.extend(name.removesuffix("_joint") for name in JOINT_ORDER)
+        values.extend(f"{tau:+6.2f}" for tau in self.input_tq.flatten())
+        self.viewer.set_texts(
+            (
+                mujoco.mjtFontScale.mjFONTSCALE_100,
+                mujoco.mjtGridPos.mjGRID_TOPRIGHT,
+                "\n".join(labels),
+                "\n".join(values),
+            )
+        )
+
     def _debug_print(self) -> None:
         if time.perf_counter() - self.last_print < 2.0:
             return
@@ -235,6 +255,7 @@ class AresMuJoCoSimulation:
             self.timestamp = self.step_count * DT
             state = self.get_state()
         if self.viewer is not None and self.viewer.is_running() and self.step_count % 10 == 0:
+            self._update_torque_overlay()
             self.viewer.sync()
         return state
 
