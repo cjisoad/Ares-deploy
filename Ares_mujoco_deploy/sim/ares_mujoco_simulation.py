@@ -205,6 +205,7 @@ class AresMuJoCoSimulation:
     def get_state(self) -> dict[str, np.ndarray | float]:
         return {
             "time": float(self.timestamp),
+            "base_pos": self.data.qpos[0:3].astype(np.float32),
             "base_rpy": self._quat_to_rpy(self.data.qpos[3:7]),
             "base_omega": self.data.sensordata[0:3].astype(np.float32),
             "base_acc": self.data.sensordata[3:6].astype(np.float32),

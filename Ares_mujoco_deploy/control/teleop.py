@@ -72,6 +72,18 @@ class VelocityTeleop:
             self._command.horizontal_velocity[:] = 0.0
             self._command.yaw_rate = 0.0
 
+    def set_forward_velocity(self, velocity: float) -> None:
+        with self._lock:
+            self._command.horizontal_velocity[0] = self._clip(velocity)
+
+    def set_lateral_velocity(self, velocity: float) -> None:
+        with self._lock:
+            self._command.horizontal_velocity[1] = self._clip(velocity)
+
+    def set_yaw_rate(self, yaw_rate: float) -> None:
+        with self._lock:
+            self._command.yaw_rate = self._clip(yaw_rate, self.max_yaw_rate)
+
     def _clip(self, value: float, limit: float | None = None) -> float:
         bound = self.max_speed if limit is None else limit
         return float(np.clip(value, -bound, bound))

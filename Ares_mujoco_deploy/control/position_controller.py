@@ -22,6 +22,8 @@ class PositionController:
         self.pin_ik = PinocchioIK()
         self.foot_locations = self.default_stance.copy()
         self.joint_targets = STAND_POSE.copy()
+        self.last_contacts = np.ones(4, dtype=np.int32)
+        self.last_foot_targets = self.default_stance.copy()
 
     def reset(self, joint_pos: np.ndarray | None = None) -> None:
         seed = STAND_POSE if joint_pos is None else joint_pos
@@ -40,32 +42,40 @@ class PositionController:
         ticks: int,
         current_joint_pos: np.ndarray,
         command: PositionControlCommand,
+        base_rpy: np.ndarray | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
         ticks = self._periodic_ticks(ticks)
         contacts = self.gait.contacts(ticks)
         swing_phase = self.gait.swing_phase(ticks)
-        next_locations = self.default_stance.copy()
+        reference_stance = self._reference_stance()
+        current_locations = self._current_foot_reference(reference_stance)
+        next_locations = current_locations.copy()
+        in_place_velocity = 0.0 if abs(command.yaw_rate) > self.config.turn_in_place_yaw_threshold else self.config.in_place_step_velocity
         in_place_command = PositionControlCommand(
-            horizontal_velocity=np.array([self.config.in_place_step_velocity, 0.0], dtype=np.float32),
-            yaw_rate=0.0,
+            horizontal_velocity=np.array([in_place_velocity, 0.0], dtype=np.float32),
+            yaw_rate=command.yaw_rate,
             height=command.height,
         )
         for leg_index in range(4):
             if contacts[leg_index]:
                 next_locations[:, leg_index] = self.stance_controller.next_foot_location(
                     leg_index,
-                    self.default_stance,
+                    current_locations,
                     in_place_command,
                 )
             else:
                 next_locations[:, leg_index] = self.swing_controller.next_foot_location(
                     swing_phase,
                     leg_index,
-                    self.default_stance,
+                    current_locations,
                     in_place_command,
+                    reference_stance,
                 )
             next_locations[:, leg_index] = self._scaled_target(leg_index, next_locations[:, leg_index])
+        next_locations = self._tilt_compensated_targets(next_locations, base_rpy)
         self.foot_locations = next_locations
+        self.last_contacts = contacts.copy()
+        self.last_foot_targets = next_locations.copy()
         self.joint_targets = self.pin_ik.solve(next_locations, current_joint_pos)
         return self.joint_targets.copy(), contacts.copy()
 
@@ -74,28 +84,35 @@ class PositionController:
         ticks: int,
         current_joint_pos: np.ndarray,
         command: PositionControlCommand,
+        base_rpy: np.ndarray | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
         ticks = self._periodic_ticks(ticks)
         contacts = self.gait.contacts(ticks)
         swing_phase = self.gait.swing_phase(ticks)
-        next_locations = self.default_stance.copy()
+        reference_stance = self._reference_stance()
+        current_locations = self._current_foot_reference(reference_stance)
+        next_locations = current_locations.copy()
         self.ticks = ticks
         for leg_index in range(4):
             if contacts[leg_index]:
                 next_locations[:, leg_index] = self.stance_controller.next_foot_location(
                     leg_index,
-                    self.default_stance,
+                    current_locations,
                     command,
                 )
             else:
                 next_locations[:, leg_index] = self.swing_controller.next_foot_location(
                     swing_phase,
                     leg_index,
-                    self.default_stance,
+                    current_locations,
                     command,
+                    reference_stance,
                 )
             next_locations[:, leg_index] = self._scaled_target(leg_index, next_locations[:, leg_index])
+        next_locations = self._tilt_compensated_targets(next_locations, base_rpy)
         self.foot_locations = next_locations
+        self.last_contacts = contacts.copy()
+        self.last_foot_targets = next_locations.copy()
         self.joint_targets = self.pin_ik.solve(next_locations, current_joint_pos)
         return self.joint_targets.copy(), contacts.copy()
 
@@ -106,8 +123,58 @@ class PositionController:
         phase = (ticks % period_ticks) / period_ticks
         return int(phase * self.gait.config.phase_length)
 
+    def _reference_stance(self) -> np.ndarray:
+        reference = self.default_stance.copy()
+        reference[0, :] -= self.config.body_forward_bias
+        return reference
+
+    def _current_foot_reference(self, reference_stance: np.ndarray) -> np.ndarray:
+        if self.config.accumulate_foot_targets:
+            return self.foot_locations.copy()
+        return reference_stance.copy()
+
+    def _tilt_compensated_targets(self, foot_targets: np.ndarray, base_rpy: np.ndarray | None) -> np.ndarray:
+        if not self.config.enable_tilt_compensation or base_rpy is None:
+            return foot_targets
+        roll, pitch = np.asarray(base_rpy, dtype=np.float32).reshape(3)[:2]
+        roll_comp = self.config.tilt_compensation_gain * np.clip(
+            roll,
+            -self.config.max_tilt_compensation,
+            self.config.max_tilt_compensation,
+        )
+        pitch_comp = self.config.tilt_compensation_gain * np.clip(
+            pitch,
+            -self.config.max_tilt_compensation,
+            self.config.max_tilt_compensation,
+        )
+        return (self._roll_pitch_matrix(roll_comp, pitch_comp).T @ foot_targets).astype(np.float32)
+
+    @staticmethod
+    def _roll_pitch_matrix(roll: float, pitch: float) -> np.ndarray:
+        cr = np.cos(roll)
+        sr = np.sin(roll)
+        cp = np.cos(pitch)
+        sp = np.sin(pitch)
+        rx = np.array(
+            [
+                [1.0, 0.0, 0.0],
+                [0.0, cr, -sr],
+                [0.0, sr, cr],
+            ],
+            dtype=np.float32,
+        )
+        ry = np.array(
+            [
+                [cp, 0.0, sp],
+                [0.0, 1.0, 0.0],
+                [-sp, 0.0, cp],
+            ],
+            dtype=np.float32,
+        )
+        return ry @ rx
+
     def _scaled_target(self, leg_index: int, target: np.ndarray) -> np.ndarray:
-        base = self.default_stance[:, leg_index]
+        base = self._reference_stance()[:, leg_index]
         scaled = np.array(
             [
                 np.clip(

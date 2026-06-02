@@ -41,6 +41,13 @@ class AresStateMachine:
         self.commanded_pos = CROUCH_POSE.copy()
         self.position_command = PositionControlCommand.zero()
         self.position_controller = PositionController(sim.model, self.config.position)
+        self.last_position_target = STAND_POSE.copy()
+        self.last_position_contacts = np.ones(4, dtype=np.int32)
+        self.position_heading_target = 0.0
+        self.position_unwrapped_yaw = 0.0
+        self.position_last_wrapped_yaw = 0.0
+        self.position_yaw_command_active = False
+        self.last_effective_yaw_rate = 0.0
         self._set_zero_torque(CROUCH_POSE)
 
     def request_stand(self) -> bool:
@@ -80,19 +87,25 @@ class AresStateMachine:
             return state
 
         if self.state == AresState.POSITION:
-            current_joint_pos = self.sim.get_state()["joint_pos"]
-            if np.allclose(self.position_command.horizontal_velocity, 0.0):
+            sim_state = self.sim.get_state()
+            current_joint_pos = sim_state["joint_pos"]
+            position_command = self._stabilized_position_command(sim_state)
+            if np.allclose(position_command.horizontal_velocity, 0.0):
                 target, _contacts = self.position_controller.in_place_step(
                     self.sim.step_count,
                     current_joint_pos,
-                    self.position_command,
+                    position_command,
+                    sim_state["base_rpy"],
                 )
             else:
                 target, _contacts = self.position_controller.step(
                     self.sim.step_count,
                     current_joint_pos,
-                    self.position_command,
+                    position_command,
+                    sim_state["base_rpy"],
                 )
+            self.last_position_target = target.copy()
+            self.last_position_contacts = _contacts.copy()
             self.sim.set_mit_command(
                 kp=np.full(self.sim.dof_num, self.config.position.kp, dtype=np.float32),
                 q_des=target,
@@ -139,6 +152,12 @@ class AresStateMachine:
         if self.position_command.height == 0.0:
             self.position_command.height = default_height
         self.position_controller.reset(self.sim.get_state()["joint_pos"])
+        current_yaw = float(self.sim.get_state()["base_rpy"][2])
+        self.position_heading_target = current_yaw
+        self.position_unwrapped_yaw = current_yaw
+        self.position_last_wrapped_yaw = current_yaw
+        self.position_yaw_command_active = abs(float(self.position_command.yaw_rate)) > self.config.position.turn_in_place_yaw_threshold
+        self.last_effective_yaw_rate = float(self.position_command.yaw_rate)
         self._enter(AresState.POSITION)
 
     def set_position_command(self, command: PositionControlCommand) -> None:
@@ -158,3 +177,37 @@ class AresStateMachine:
             return 1.0
         x = float(np.clip(elapsed / duration, 0.0, 1.0))
         return x * x * (3.0 - 2.0 * x)
+
+    def _stabilized_position_command(self, sim_state: dict[str, np.ndarray | float]) -> PositionControlCommand:
+        raw = self.position_command
+        current_yaw = float(np.asarray(sim_state["base_rpy"], dtype=np.float32)[2])
+        yaw_delta = self._wrap_angle(current_yaw - self.position_last_wrapped_yaw)
+        self.position_unwrapped_yaw += yaw_delta
+        self.position_last_wrapped_yaw = current_yaw
+
+        yaw_command_active = abs(float(raw.yaw_rate)) > self.config.position.turn_in_place_yaw_threshold
+        if yaw_command_active:
+            self.position_heading_target += raw.yaw_rate * self.config.position.dt
+        elif self.position_yaw_command_active:
+            self.position_heading_target = self.position_unwrapped_yaw
+        self.position_yaw_command_active = yaw_command_active
+
+        yaw_error = self.position_heading_target - self.position_unwrapped_yaw
+        effective_yaw_rate = raw.yaw_rate + self.config.position.yaw_feedback_gain * yaw_error
+        effective_yaw_rate = float(
+            np.clip(
+                effective_yaw_rate,
+                -self.config.position.max_yaw_rate,
+                self.config.position.max_yaw_rate,
+            )
+        )
+        self.last_effective_yaw_rate = effective_yaw_rate
+        return PositionControlCommand(
+            horizontal_velocity=raw.horizontal_velocity.copy(),
+            yaw_rate=effective_yaw_rate,
+            height=raw.height,
+        )
+
+    @staticmethod
+    def _wrap_angle(angle: float) -> float:
+        return float((angle + np.pi) % (2.0 * np.pi) - np.pi)

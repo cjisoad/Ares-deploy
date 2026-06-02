@@ -26,20 +26,28 @@ class PositionControlConfig:
     dt: float = DT
     overlap_time: float = 0.10
     swing_time: float = 0.20
-    z_clearance: float = 0.06
-    alpha: float = 1.8
-    beta: float = 0.5
+    z_clearance: float = 0.07
+    alpha: float = 3.2
+    beta: float = 2.4
     z_time_constant: float = 0.08
     kp: float = 75.0
     kd: float = 3.5
-    step_period: float = 0.42
+    step_period: float = 0.34
     in_place_step_velocity: float = 0.20
+    turn_in_place_yaw_threshold: float = 0.05
     visual_xy_gain: float = 1.8
     visual_z_gain: float = 1.8
-    max_x_offset: float = 0.18
-    max_y_offset: float = 0.10
+    max_x_offset: float = 0.32
+    max_y_offset: float = 0.18
     min_z_offset: float = -0.02
     max_z_offset: float = 0.16
+    body_forward_bias: float = 0.05
+    accumulate_foot_targets: bool = False
+    yaw_feedback_gain: float = 3.0
+    max_yaw_rate: float = 2.4
+    enable_tilt_compensation: bool = False
+    tilt_compensation_gain: float = 0.8
+    max_tilt_compensation: float = 0.4
 
     @property
     def overlap_ticks(self) -> int:

@@ -11,7 +11,13 @@ class SwingController:
         self.config = config
         self.default_stance = np.asarray(default_stance, dtype=np.float32).reshape(3, 4)
 
-    def touchdown_location(self, leg_index: int, command: PositionControlCommand) -> np.ndarray:
+    def touchdown_location(
+        self,
+        leg_index: int,
+        command: PositionControlCommand,
+        reference_stance: np.ndarray | None = None,
+    ) -> np.ndarray:
+        stance = self.default_stance if reference_stance is None else np.asarray(reference_stance, dtype=np.float32).reshape(3, 4)
         delta_xy = (
             self.config.alpha
             * self.config.stance_ticks
@@ -20,7 +26,7 @@ class SwingController:
         )
         delta_p = np.array([delta_xy[0], delta_xy[1], 0.0], dtype=np.float32)
         yaw = self.config.beta * self.config.stance_ticks * self.config.dt * command.yaw_rate
-        return yaw_matrix(yaw) @ self.default_stance[:, leg_index] + delta_p
+        return yaw_matrix(yaw) @ stance[:, leg_index] + delta_p
 
     def swing_height(self, swing_phase: float) -> float:
         if swing_phase < 0.5:
@@ -33,10 +39,11 @@ class SwingController:
         leg_index: int,
         foot_locations: np.ndarray,
         command: PositionControlCommand,
+        reference_stance: np.ndarray | None = None,
     ) -> np.ndarray:
         phase = float(np.clip(swing_phase, 0.0, 1.0))
         foot_location = foot_locations[:, leg_index]
-        touchdown = self.touchdown_location(leg_index, command)
+        touchdown = self.touchdown_location(leg_index, command, reference_stance)
         time_left = max(self.config.dt, self.config.dt * self.config.swing_ticks * (1.0 - phase))
         velocity = (touchdown - foot_location) / time_left * np.array([1.0, 1.0, 0.0], dtype=np.float32)
         next_location = foot_location * np.array([1.0, 1.0, 0.0], dtype=np.float32) + velocity * self.config.dt
